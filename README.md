@@ -69,6 +69,16 @@ more than a newline. Dotfiles such as `.gitignore` are listed (only known
 noise like `.git` is pruned), which is the one place the two disagree about
 what exists.
 
+## Agent usage
+
+When an AI agent works in a repository, give it this rule (for example in
+`AGENTS.md`) instead of aliasing `ls`: it is explicit, scoped to the repo,
+and needs no flag compatibility.
+
+> For directory listings use `agent-ls`: `agent-ls` to discover names,
+> `agent-ls -T -d 2` to triage a subtree, and `agent-ls -R` instead of
+> `ls -R` or `ls -lR`. Never run `ls -lR` / `ls -R` on a repo root.
+
 ## Why it is shaped this way
 
 - **Cost is a first-class column.** `lines` and `tokens` let an agent decide

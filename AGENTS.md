@@ -13,3 +13,7 @@ with JSON when a program is consuming it.
 ## Rules
 
 Use git commit after changed code.
+
+For directory listings use `agent-ls`: `agent-ls` to discover names,
+`agent-ls -T -d 2` to triage a subtree, and `agent-ls -R` instead of
+`ls -R` or `ls -lR`. Never run `ls -lR` / `ls -R` on a repo root.
