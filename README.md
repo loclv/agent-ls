@@ -7,8 +7,8 @@ needs different facts before it decides what to read: how large a file is,
 whether it is text, how many lines it has, roughly how many tokens reading
 it will cost, how old it is, and which directories are generated noise.
 `agent-ls` by default prints plain names, one per line, like `ls` when piped;
-`--table` puts exactly those facts in one deterministic, tab-separated table,
-with JSON when a program is consuming it.
+`--table` puts exactly those facts in one deterministic, tab-separated table;
+`--csv` and `--json` provide machine-readable formats.
 
 It is a single ~1,000-line [Goose](https://github.com/aardappel/goose)
 program plus a small C shim for the filesystem metadata Goose's standard
@@ -44,8 +44,17 @@ src/fs.c	f	8.8K	281	~2.3k	4m	-	c
 # .: 5 entries (2 dirs, 3 files), 45K, ~12k tokens, 1 ignored
 ```
 
-The table header and summary start with `#`, so a parser can tell them from
-rows. Every path is ready to pass to a read tool. No color, no alignment
+For tools that consume comma-separated records, use `--csv`. It emits a
+header and one RFC-style quoted CSV row per entry, without the human summary:
+
+```text
+$ ./agent-ls --csv
+"path","kind","size","lines","tokens","age","flags","lang"
+"README.md","f","3.4K","112","~870","2d","-","markdown"
+```
+
+The TSV table header and summary start with `#`, so a parser can tell them
+from rows. Every path is ready to pass to a read tool. No color, no alignment
 padding, no locale-dependent dates, no inode or owner columns.
 
 ## Compared with `ls`
@@ -97,9 +106,9 @@ and needs no flag compatibility.
   the format does not change with terminal width, `TERM`, locale or time
   zone (ages are relative; `--long` uses UTC).
 - **Machine modes are not an afterthought.** The default is one name per
-  line, so nothing is padded. `--json` emits a stable schema with per-root
-  summaries. `-q` is the default text mode even when `-l` asks for more; the
-  table is explicit via `--table`.
+  line, so nothing is padded. `--csv` emits standard quoted CSV records;
+  `--json` emits a stable schema with per-root summaries. `-q` is the default
+  text mode even when `-l` asks for more; the table is explicit via `--table`.
 
 ## Output
 
@@ -132,6 +141,14 @@ an ISO-8601 UTC `mtime` before `age`.
 Paths containing a tab, newline, backslash or control byte are escaped as
 `\t`, `\n`, `\\` and `\xNN` so a row can never break its columns. JSON
 carries the exact bytes.
+
+### CSV
+
+`--csv` uses the same columns and values as the tab-separated table, with
+standard CSV quoting for every field. Embedded quotes are doubled, and
+commas or newlines in paths remain inside their quoted field. It emits no
+summary rows, so the output can be read directly as CSV. `--no-header` and
+`--long` work with CSV too.
 
 ### JSON
 
@@ -186,13 +203,14 @@ agent-ls [options] [path ...]
   -a, --all         include VCS internals and build/vendor noise
       --ignored     show ignored entries, marked i, without descending
   -T, --table       tab-separated metadata table
+      --csv         CSV metadata table for machine consumption
   -s, --sort KEY    name (default), size, time, kind
       --reverse     reverse the order
   -N, --limit N     show at most N entries per root
       --ext LIST    only files with these extensions (go,ts,py)
   -l, --long        table with mode and an ISO-8601 UTC mtime
       --no-lines    skip reads; no line counts, token estimates or binary flags
-      --no-header   omit the # header row (table only)
+      --no-header   omit the header row (table and CSV)
       --no-summary  omit the # summary row (table only)
   -q, --quiet       plain names only (the default), even with -l
   -j, --json        JSON array, one object per root, with a summary

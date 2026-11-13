@@ -36,6 +36,7 @@ enum SortKey { Name, Size, Time, Kind }
 struct Options {
     depth: i64 = DEFAULT_DEPTH,
     json: bool = false,
+    csv: bool = false,
     quiet: bool = false,
     table: bool = false,
     long: bool = false,
@@ -134,13 +135,14 @@ options:
   -a, --all         include VCS internals and build/vendor noise
       --ignored     show ignored entries, marked i, without descending
   -T, --table       tab-separated metadata table (old default)
+      --csv         CSV metadata table for machine consumption
   -s, --sort KEY    name (default), size, time, kind
       --reverse     reverse the order
   -N, --limit N     show at most N entries per root
       --ext LIST    only files with these extensions (go,ts,py)
   -l, --long        table with mode and an ISO-8601 UTC mtime
       --no-lines    skip reads; no line counts, token estimates or binary flags
-      --no-header   omit the # header row (table only)
+      --no-header   omit the header row (table and CSV)
       --no-summary  omit the # summary row (table only)
   -q, --quiet       plain names only (the default), even with -l
   -j, --json        JSON array, one object per root, with a summary
@@ -732,6 +734,65 @@ fn write_header(out: u8[>..]&, opt: Options) {
     out.append("age\tflags\tlang\n");
 }
 
+// CSV fields are quoted uniformly, with embedded quotes doubled. This keeps
+// paths containing commas, quotes or newlines valid in a standard CSV reader.
+fn write_csv_field(out: u8[>..]&, value: const u8[:]) {
+    out.push('"');
+    for c in value {
+        if c == '"' { out.append("\"\""); }
+        else { out.push(c); }
+    }
+    out.push('"');
+}
+
+fn csv_field(out: u8[>..]&, value: const u8[:], first: bool) {
+    if !first { out.push(','); }
+    write_csv_field(out, value);
+}
+
+fn write_csv_row(out: u8[>..]&, it: const Item&, now: i64, opt: Options) {
+    var field: u8[>..] = [];
+    write_path(field, it);
+    csv_field(out, field, true);
+    field = [];
+    field.push(it.kind);
+    csv_field(out, field, false);
+    field = [];
+    if opt.long { format_mode(field, it.kind, it.mode); }
+    if opt.long { csv_field(out, field, false); field = []; }
+    if it.kind == 'd' { field.push('-'); }
+    else { format_size(field, it.size); }
+    csv_field(out, field, false);
+    field = [];
+    if it.lines >= 0 { format(field, it.lines); }
+    else { field.push('-'); }
+    csv_field(out, field, false);
+    field = [];
+    if it.tokens >= 0 { field.push('~'); format_compact(field, it.tokens); }
+    else { field.push('-'); }
+    csv_field(out, field, false);
+    field = [];
+    if opt.long { fs_time(it.mtime, field); csv_field(out, field, false); field = []; }
+    format_age(field, it.mtime, now);
+    csv_field(out, field, false);
+    field = [];
+    write_flags(field, it);
+    csv_field(out, field, false);
+    field = [];
+    if it.lang.len > 0 { field.append(it.lang); }
+    else { field.push('-'); }
+    csv_field(out, field, false);
+    out.push('\n');
+}
+
+fn write_csv_header(out: u8[>..]&, opt: Options) {
+    out.append("\"path\",\"kind\",");
+    if opt.long { out.append("\"mode\","); }
+    out.append("\"size\",\"lines\",\"tokens\",");
+    if opt.long { out.append("\"mtime\","); }
+    out.append("\"age\",\"flags\",\"lang\"\n");
+}
+
 fn append_count(out: u8[>..]&, n: i64, word: const u8[:]) {
     if n == 1 {
         format(out, n, " ", word);
@@ -969,6 +1030,7 @@ fn main() {
         if a == "--no-header" { opt.header = false; i += 1; continue; }
         if a == "--no-summary" { opt.summary = false; i += 1; continue; }
         if a == "--json" { opt.json = true; i += 1; continue; }
+        if a == "--csv" { opt.csv = true; opt.table = true; i += 1; continue; }
         if a == "--quiet" { opt.quiet = true; i += 1; continue; }
         if a == "--table" { opt.table = true; i += 1; continue; }
         if a == "--long" { opt.long = true; opt.table = true; i += 1; continue; }
@@ -1030,7 +1092,7 @@ fn main() {
 
     // Plain output shows no file contents, so skip reading every file just to
     // count lines nobody will see. JSON and the table still need them.
-    if !opt.json && (opt.quiet || !opt.table) { opt.lines = false; }
+    if !opt.json && !opt.csv && (opt.quiet || !opt.table) { opt.lines = false; }
 
     sort_key = opt.sort;
     sort_reverse = opt.reverse;
@@ -1046,6 +1108,16 @@ fn main() {
     var out: u8[>..] = [];
     if opt.json {
         write_json(out, opt);
+    } else if opt.csv {
+        if opt.header && !empty_failure { write_csv_header(out, opt); }
+        for res in roots {
+            var shown = 0;
+            for i in res.start..res.end {
+                if opt.limit > 0 && shown >= opt.limit { break; }
+                write_csv_row(out, items[i], now, opt);
+                shown += 1;
+            }
+        }
     } else if opt.quiet || !opt.table {
         for res in roots {
             var shown = 0;
