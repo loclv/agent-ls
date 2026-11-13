@@ -1,13 +1,13 @@
-/* The native half of agent-ls: directory listing with metadata, one stat
+/* The native half of al: directory listing with metadata, one stat
    per entry, and a fast text/binary probe for line counting.
 
    Goose's `os` module can list names but not sizes, modes or mtimes, so this
    file fills that gap. Everything it hands back is line-oriented text; the
    Goose side owns parsing, filtering, sorting and rendering.
 
-   Record for als_list   (one per entry, name last so it may contain tabs):
+   Record for al_list   (one per entry, name last so it may contain tabs):
        kind \t mode \t size \t mtime \t escaped-name \n
-   Record for als_meta   (the root itself, no name):
+   Record for al_meta   (the root itself, no name):
        kind \t mode \t size \t mtime \n
 
    kind is d (directory), f (file), l (symlink) or o (other). mode is the
@@ -26,7 +26,7 @@
 typedef struct {
     const uint8_t *data;
     int64_t len;
-} als_sl_u8;
+} al_sl_u8;
 
 #ifndef _WIN32
 #include <dirent.h>
@@ -37,7 +37,7 @@ typedef struct {
 #include <windows.h>
 #endif
 
-static char *als_cstr(als_sl_u8 s) {
+static char *al_cstr(al_sl_u8 s) {
     char *p = (char *)malloc((size_t)s.len + 1);
     if (!p) return NULL;
     if (s.len) memcpy(p, s.data, (size_t)s.len);
@@ -45,7 +45,7 @@ static char *als_cstr(als_sl_u8 s) {
     return p;
 }
 
-static void als_append_escaped(gs_rref out, const char *name) {
+static void al_append_escaped(gs_rref out, const char *name) {
     char buf[512];
     size_t n = 0;
     for (const char *p = name; *p; p++) {
@@ -80,21 +80,21 @@ static void als_append_escaped(gs_rref out, const char *name) {
     if (n) gs_bld_append(out, buf, (int64_t)n);
 }
 
-static void als_append_record(gs_rref out, const char *name, char kind,
+static void al_append_record(gs_rref out, const char *name, char kind,
                               uint64_t mode, int64_t size, int64_t mtime) {
     char head[160];
     int n = snprintf(head, sizeof(head), "%c\t%03o\t%lld\t%lld\t",
                      kind, (unsigned)(mode & 0777), (long long)size,
                      (long long)mtime);
     if (n > 0) gs_bld_append(out, head, (int64_t)n);
-    als_append_escaped(out, name);
+    al_append_escaped(out, name);
     gs_bld_append(out, "\n", 1);
 }
 
 #ifndef _WIN32
 
-bool als_list(als_sl_u8 path, gs_rref out) {
-    char *base = als_cstr(path);
+bool al_list(al_sl_u8 path, gs_rref out) {
+    char *base = al_cstr(path);
     if (!base) return false;
     DIR *dir = opendir(base);
     if (!dir) {
@@ -125,7 +125,7 @@ bool als_list(als_sl_u8 path, gs_rref out) {
                       : S_ISLNK(st.st_mode) ? 'l'
                       : S_ISREG(st.st_mode) ? 'f'
                       : 'o';
-            als_append_record(out, ent->d_name, kind, (uint64_t)st.st_mode,
+            al_append_record(out, ent->d_name, kind, (uint64_t)st.st_mode,
                               (int64_t)st.st_size, (int64_t)st.st_mtime);
         }
         free(full);
@@ -138,8 +138,8 @@ bool als_list(als_sl_u8 path, gs_rref out) {
 /* 0 on success, 1 when the path does not exist, 2 for any other failure
    (permission denied, a path component that is not a directory, I/O error).
    The caller can then say "not found" only when that is what happened. */
-int64_t als_meta(als_sl_u8 path, gs_rref out) {
-    char *p = als_cstr(path);
+int64_t al_meta(al_sl_u8 path, gs_rref out) {
+    char *p = al_cstr(path);
     if (!p) return 2;
     struct stat st;
     if (stat(p, &st) != 0) {
@@ -162,13 +162,13 @@ int64_t als_meta(als_sl_u8 path, gs_rref out) {
 
 #else /* _WIN32 */
 
-static int64_t als_filetime_to_unix(FILETIME ft) {
+static int64_t al_filetime_to_unix(FILETIME ft) {
     uint64_t t = ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
     return (int64_t)(t / 10000000ULL) - 11644473600LL;
 }
 
-bool als_list(als_sl_u8 path, gs_rref out) {
-    char *base = als_cstr(path);
+bool al_list(al_sl_u8 path, gs_rref out) {
+    char *base = al_cstr(path);
     if (!base) return false;
     size_t base_len = strlen(base);
     bool add_slash = base_len > 0 && base[base_len - 1] != '\\' &&
@@ -196,21 +196,21 @@ bool als_list(als_sl_u8 path, gs_rref out) {
     do {
         if (!strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, "..")) continue;
         uint64_t size = ((uint64_t)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
-        int64_t mtime = als_filetime_to_unix(fd.ftLastWriteTime);
+        int64_t mtime = al_filetime_to_unix(fd.ftLastWriteTime);
         char kind;
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) kind = 'l';
         else if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) kind = 'd';
         else kind = 'f';
         uint64_t mode = (fd.dwFileAttributes & FILE_ATTRIBUTE_READONLY) ? 0444 : 0644;
-        als_append_record(out, fd.cFileName, kind, mode, (int64_t)size, mtime);
+        al_append_record(out, fd.cFileName, kind, mode, (int64_t)size, mtime);
     } while (FindNextFileA(h, &fd));
     FindClose(h);
     free(base);
     return ok;
 }
 
-int64_t als_meta(als_sl_u8 path, gs_rref out) {
-    char *p = als_cstr(path);
+int64_t al_meta(al_sl_u8 path, gs_rref out) {
+    char *p = al_cstr(path);
     if (!p) return 2;
     WIN32_FILE_ATTRIBUTE_DATA fd;
     if (!GetFileAttributesExA(p, GetFileExInfoStandard, &fd)) {
@@ -220,7 +220,7 @@ int64_t als_meta(als_sl_u8 path, gs_rref out) {
     }
     free(p);
     uint64_t size = ((uint64_t)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
-    int64_t mtime = als_filetime_to_unix(fd.ftLastWriteTime);
+    int64_t mtime = al_filetime_to_unix(fd.ftLastWriteTime);
     char kind;
     if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) kind = 'l';
     else if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) kind = 'd';
@@ -237,8 +237,8 @@ int64_t als_meta(als_sl_u8 path, gs_rref out) {
 
 /* Lines in a text file, or -1 when it is larger than max_bytes, unreadable,
    or looks binary (a NUL in the first 8 KiB). An empty file has 0 lines. */
-int64_t als_count_lines(als_sl_u8 path, int64_t max_bytes) {
-    char *p = als_cstr(path);
+int64_t al_count_lines(al_sl_u8 path, int64_t max_bytes) {
+    char *p = al_cstr(path);
     if (!p) return -1;
     FILE *f = fopen(p, "rb");
     free(p);
@@ -272,7 +272,7 @@ int64_t als_count_lines(als_sl_u8 path, int64_t max_bytes) {
 }
 
 /* An ISO-8601 UTC timestamp into a builder, for --long. */
-void als_time(int64_t seconds, gs_rref out) {
+void al_time(int64_t seconds, gs_rref out) {
     time_t t = (time_t)seconds;
     struct tm tmv;
 #ifdef _WIN32

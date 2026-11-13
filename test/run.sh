@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Tests for agent-ls. Builds nothing: run `make test`, or set AGENT_LS to a
+# Tests for al. Builds nothing: run `make test`, or set AL to a
 # built binary.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-ALS=${AGENT_LS:-"$ROOT/agent-ls"}
+ALS=${AL:-"$ROOT/al"}
 if [ ! -x "$ALS" ]; then
-    echo "FAIL: $ALS is not executable (run: goose build agent_ls.goose)" >&2
+    echo "FAIL: $ALS is not executable (run: goose build al.goose)" >&2
     exit 1
 fi
 
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/agent-ls-test.XXXXXX")
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/al-test.XXXXXX")
 FIX="$TMP/fixture"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -50,10 +50,10 @@ ln -s README.md "$FIX/link.txt"
 
 # --- basics ---------------------------------------------------------------
 version=$("$ALS" --version)
-expect_contains "$version" "agent-ls 1." "--version"
+expect_contains "$version" "al 1." "--version"
 
 help=$("$ALS" --help)
-expect_contains "$help" "usage: agent-ls" "--help"
+expect_contains "$help" "usage: al" "--help"
 expect_contains "$help" "--depth" "--help"
 
 out=$("$ALS" "$FIX")
@@ -165,6 +165,6 @@ status=$?
 set -e
 [ "$status" = "1" ] || fail "missing path should exit 1, got $status"
 expect_contains "$missing" "no such file or directory" "missing path"
-[ -z "$(printf '%s\n' "$missing" | grep -v '^agent-ls:')" ] || fail "missing path should not print an empty table"
+[ -z "$(printf '%s\n' "$missing" | grep -v '^al:')" ] || fail "missing path should not print an empty table"
 
-echo "ok: all agent-ls tests passed"
+echo "ok: all al tests passed"

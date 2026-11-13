@@ -1,19 +1,19 @@
 GOOSE ?= goose
 PREFIX ?= $(HOME)/.local
 
-all: agent-ls
+all: al
 
-agent-ls: agent_ls.goose agent_ls.build src/fs.c
-	$(GOOSE) build agent_ls.goose
+al: al.goose al.build src/fs.c
+	$(GOOSE) build al.goose
 
-test: agent-ls
+test: al
 	bash test/run.sh
 
-install: agent-ls
+install: al
 	install -d "$(PREFIX)/bin"
-	install -m 755 agent-ls "$(PREFIX)/bin/agent-ls"
+	install -m 755 al "$(PREFIX)/bin/al"
 
 clean:
-	rm -f agent-ls
+	rm -f al
 
 .PHONY: all test install clean

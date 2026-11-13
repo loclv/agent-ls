@@ -1,12 +1,12 @@
-// agent-ls: a directory listing for AI agents, not humans.
+// al: a directory listing for AI agents, not humans.
 //
 // ls answers "what is here?" for eyes. An agent needs more: how big is it,
 // is it text, how many lines and roughly how many tokens will reading it
-// cost, how old is it, and is it noise it should skip. agent-ls answers that
+// cost, how old is it, and is it noise it should skip. al answers that
 // in one deterministic, tab-separated table, or as JSON.
 //
-// Build:  goose build agent_ls.goose
-// Run:    agent-ls --depth 2 .
+// Build:  goose build al.goose
+// Run:    al --depth 2 .
 //
 // The native half (src/fs.c) supplies the stat metadata and text probe that
 // the standard library's `os` module does not expose.
@@ -16,10 +16,10 @@ import os;
 
 // ---------------------------------------------------------------- C boundary
 
-extern "als_list" fn fs_list(path: const u8[:], out: u8[>..]&) -> bool;
-extern "als_meta" fn fs_meta(path: const u8[:], out: u8[>..]&) -> i64;
-extern "als_count_lines" fn fs_count_lines(path: const u8[:], max_bytes: i64) -> i64;
-extern "als_time" fn fs_time(seconds: i64, out: u8[>..]&);
+extern "al_list" fn fs_list(path: const u8[:], out: u8[>..]&) -> bool;
+extern "al_meta" fn fs_meta(path: const u8[:], out: u8[>..]&) -> i64;
+extern "al_count_lines" fn fs_count_lines(path: const u8[:], max_bytes: i64) -> i64;
+extern "al_time" fn fs_time(seconds: i64, out: u8[>..]&);
 
 // ------------------------------------------------------------------- limits
 
@@ -111,9 +111,9 @@ var sort_reverse = false;
 // ------------------------------------------------------------------- text
 
 const HELP: const u8[:] = """
-agent-ls - a directory listing for AI agents
+al - a directory listing for AI agents
 
-usage: agent-ls [options] [path ...]
+usage: al [options] [path ...]
 
 Defaults to the current directory and one level of entries. The default
 output is plain names, one per line, like `ls` when piped: no header, no
@@ -153,23 +153,23 @@ Sorting: name is ascending, size is largest first, time is newest first.
 --reverse flips that. Directories and files sort together by full path.
 
 examples:
-  agent-ls                       plain names, like ls
-  agent-ls -T                    what is in this directory, with costs
-  agent-ls -T -d 2 src           two levels, with line counts and tokens
-  agent-ls -q --ext go,ts .      just the source paths
-  agent-ls -j -R --limit 500 .   machine-readable, bounded
+  al                       plain names, like ls
+  al -T                    what is in this directory, with costs
+  al -T -d 2 src           two levels, with line counts and tokens
+  al -q --ext go,ts .      just the source paths
+  al -j -R --limit 500 .   machine-readable, bounded
 """;
 
 fn fatal(msg: const u8[:]) {
     var e: u8[>..] = [];
-    format(e, "agent-ls: ", msg, "\nTry 'agent-ls --help'.\n");
+    format(e, "al: ", msg, "\nTry 'al --help'.\n");
     write_stderr(e);
     exit(2);
 }
 
 fn report_error(path: const u8[:], msg: const u8[:]) {
     var e: u8[>..] = [];
-    format(e, "agent-ls: ", path, ": ", msg, "\n");
+    format(e, "al: ", path, ": ", msg, "\n");
     write_stderr(e);
     total_errors += 1;
 }
@@ -987,7 +987,7 @@ fn main() {
         }
 
         if a == "--help" { print(HELP); return; }
-        if a == "--version" { print("agent-ls ", VERSION); return; }
+        if a == "--version" { print("al ", VERSION); return; }
 
         if a == "--depth" || starts_with(a, "--depth=") {
             let v, ni, ok = option_value(args, i, a, 7);
@@ -1048,7 +1048,7 @@ fn main() {
                 else if c == 'l' { opt.long = true; opt.table = true; }
                 else if c == 'R' { opt.depth = MAX_DEPTH; }
                 else if c == 'h' { print(HELP); return; }
-                else if c == 'v' { print("agent-ls ", VERSION); return; }
+                else if c == 'v' { print("al ", VERSION); return; }
                 else if c == 'd' || c == 's' || c == 'N' {
                     var v: const u8[:] = "";
                     if k + 1 < rest.len {

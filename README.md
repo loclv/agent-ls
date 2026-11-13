@@ -1,4 +1,4 @@
-# agent-ls
+# al
 
 `ls` for AI agents, not humans.
 
@@ -6,7 +6,7 @@
 needs different facts before it decides what to read: how large a file is,
 whether it is text, how many lines it has, roughly how many tokens reading
 it will cost, how old it is, and which directories are generated noise.
-`agent-ls` by default prints plain names, one per line, like `ls` when piped;
+`al` by default prints plain names, one per line, like `ls` when piped;
 `--table` puts exactly those facts in one deterministic, tab-separated table;
 `--csv` and `--json` provide machine-readable formats.
 
@@ -20,8 +20,8 @@ Requirements: a Goose compiler (built and tested with the v2026.3 release)
 and a C compiler, which `goose build` already needs.
 
 ```sh
-goose build agent_ls.goose
-./agent-ls
+goose build al.goose
+./al
 ```
 
 ```text
@@ -34,10 +34,10 @@ test
 `--table` adds the facts an agent needs before reading:
 
 ```text
-$ ./agent-ls --table
+$ ./al --table
 # path	kind	size	lines	tokens	age	flags	lang
 README.md	f	3.4K	112	~870	2d	-	markdown
-agent_ls.goose	f	33K	1020	~8.5k	12s	-	goose
+al.goose	f	33K	1020	~8.5k	12s	-	goose
 scratch/	d	-	-	-	4m	-	-
 src/	d	-	-	-	4m	-	-
 src/fs.c	f	8.8K	281	~2.3k	4m	-	c
@@ -48,7 +48,7 @@ For tools that consume comma-separated records, use `--csv`. It emits a
 header and one RFC-style quoted CSV row per entry, without the human summary:
 
 ```text
-$ ./agent-ls --csv
+$ ./al --csv
 "path","kind","size","lines","tokens","age","flags","lang"
 "README.md","f","3.4K","112","~870","2d","-","markdown"
 ```
@@ -59,12 +59,12 @@ padding, no locale-dependent dates, no inode or owner columns.
 
 ## Compared with `ls`
 
-For a plain listing, a piped `ls` and `agent-ls` speak the same language:
-one name per line, no columns, no color. `agent-ls` only drops known noise
+For a plain listing, a piped `ls` and `al` speak the same language:
+one name per line, no columns, no color. `al` only drops known noise
 (`node_modules` here) and sorts by bytes, not locale:
 
 ```text
-$ ls                 $ agent-ls
+$ ls                 $ al
 Makefile             Makefile
 node_modules         README.md
 README.md            src
@@ -72,7 +72,7 @@ src                  test
 test
 ```
 
-In a terminal `ls` would switch to padded columns; `agent-ls` always keeps
+In a terminal `ls` would switch to padded columns; `al` always keeps
 the one-name-per-line shape, so a name is never separated from the next by
 more than a newline. Dotfiles such as `.gitignore` are listed (only known
 noise like `.git` is pruned), which is the one place the two disagree about
@@ -84,8 +84,8 @@ When an AI agent works in a repository, give it this rule (for example in
 `AGENTS.md`) instead of aliasing `ls`: it is explicit, scoped to the repo,
 and needs no flag compatibility.
 
-> For directory listings use `agent-ls`: `agent-ls` to discover names,
-> `agent-ls -T -d 2` to triage a subtree, and `agent-ls -R` instead of
+> For directory listings use `al`: `al` to discover names,
+> `al -T -d 2` to triage a subtree, and `al -R` instead of
 > `ls -R` or `ls -lR`. Never run `ls -lR` / `ls -R` on a repo root.
 
 ## Why it is shaped this way
@@ -153,7 +153,7 @@ summary rows, so the output can be read directly as CSV. `--no-header` and
 ### JSON
 
 ```sh
-agent-ls --json --depth 2 .
+al --json --depth 2 .
 ```
 
 ```json
@@ -196,7 +196,7 @@ printed), `2` a usage error.
 ## Options
 
 ```
-agent-ls [options] [path ...]
+al [options] [path ...]
 
   -d, --depth N     levels below the root (default 1, 0 = the root only)
   -R                recurse (depth 64)
@@ -230,26 +230,26 @@ flips the result.
 ```sh
 make
 make test
-make install                 # ~/.local/bin/agent-ls
+make install                 # ~/.local/bin/al
 make install PREFIX=/usr/local
 ```
 
 Or build and copy by hand:
 
 ```sh
-goose build agent_ls.goose
-install -m 755 agent-ls ~/.local/bin/agent-ls
+goose build al.goose
+install -m 755 al ~/.local/bin/al
 ```
 
 The build produces one self-contained executable. `src/fs.c` includes
 `goose.h` from the compiler's toolchain; no other dependency is involved.
 
-For development, `goose agent_ls.goose -- --depth 2 .` runs from source and
+For development, `goose al.goose -- --depth 2 .` runs from source and
 rebuilds the C shim in-process.
 
 ## Design
 
-- `agent_ls.goose` is the whole tool: CLI parsing, ignoring, walking,
+- `al.goose` is the whole tool: CLI parsing, ignoring, walking,
   sorting, text/JSON rendering, and the output contract.
 - `src/fs.c` is the only native code. Goose's `os` module can list names but
   has no `stat`, so this adds `listdir + lstat` records, a root `stat`, a
