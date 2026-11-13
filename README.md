@@ -6,8 +6,9 @@
 needs different facts before it decides what to read: how large a file is,
 whether it is text, how many lines it has, roughly how many tokens reading
 it will cost, how old it is, and which directories are generated noise.
-`agent-ls` puts exactly those facts in one deterministic, tab-separated
-table, with JSON when a program is consuming it.
+`agent-ls` by default prints plain names, one per line, like `ls` when piped;
+`--table` puts exactly those facts in one deterministic, tab-separated table,
+with JSON when a program is consuming it.
 
 It is a single ~1,000-line [Goose](https://github.com/aardappel/goose)
 program plus a small C shim for the filesystem metadata Goose's standard
@@ -24,6 +25,16 @@ goose build agent_ls.goose
 ```
 
 ```text
+Makefile
+README.md
+src
+test
+```
+
+`--table` adds the facts an agent needs before reading:
+
+```text
+$ ./agent-ls --table
 # path	kind	size	lines	tokens	age	flags	lang
 README.md	f	3.4K	112	~870	2d	-	markdown
 agent_ls.goose	f	33K	1020	~8.5k	12s	-	goose
@@ -33,9 +44,30 @@ src/fs.c	f	8.8K	281	~2.3k	4m	-	c
 # .: 5 entries (2 dirs, 3 files), 45K, ~12k tokens, 1 ignored
 ```
 
-The header and summary start with `#`, so a parser can tell them from rows.
-Every path is ready to pass to a read tool. No color, no alignment padding,
-no locale-dependent dates, no inode or owner columns.
+The table header and summary start with `#`, so a parser can tell them from
+rows. Every path is ready to pass to a read tool. No color, no alignment
+padding, no locale-dependent dates, no inode or owner columns.
+
+## Compared with `ls`
+
+For a plain listing, a piped `ls` and `agent-ls` speak the same language:
+one name per line, no columns, no color. `agent-ls` only drops known noise
+(`node_modules` here) and sorts by bytes, not locale:
+
+```text
+$ ls                 $ agent-ls
+Makefile             Makefile
+node_modules         README.md
+README.md            src
+src                  test
+test
+```
+
+In a terminal `ls` would switch to padded columns; `agent-ls` always keeps
+the one-name-per-line shape, so a name is never separated from the next by
+more than a newline. Dotfiles such as `.gitignore` are listed (only known
+noise like `.git` is pruned), which is the one place the two disagree about
+what exists.
 
 ## Why it is shaped this way
 
@@ -49,19 +81,29 @@ no locale-dependent dates, no inode or owner columns.
   `--all` includes everything.
 - **One row per entry, one pass per file.** The native layer returns type,
   mode, size and mtime from the same `stat` that follows `readdir`, and only
-  then reads a file if a line count is requested.
+  then reads a file if a line count is requested. The default plain mode
+  requests none, so it does no reads at all.
 - **Deterministic output.** Rows are always sorted, paths are explicit, and
   the format does not change with terminal width, `TERM`, locale or time
   zone (ages are relative; `--long` uses UTC).
-- **Machine modes are not an afterthought.** `--json` emits a stable schema
-  with per-root summaries. `-q` emits only paths. The default text mode is
-  TSV, not whitespace-aligned prose.
+- **Machine modes are not an afterthought.** The default is one name per
+  line, so nothing is padded. `--json` emits a stable schema with per-root
+  summaries. `-q` is the default text mode even when `-l` asks for more; the
+  table is explicit via `--table`.
 
 ## Output
 
 ### Text (default)
 
-One tab-separated row per entry:
+Plain names, one line each, like `ls` when piped. There is no header, no
+summary and no padding, so a name is never separated from the next by more
+than a newline. Directories are listed without a trailing slash, and file
+contents are not read, which keeps the default as cheap as `ls`.
+
+### Table
+
+`--table` (`-T`, also implied by `-l`) prints one tab-separated row per
+entry:
 
 | column | meaning |
 | --- | --- |
@@ -133,15 +175,16 @@ agent-ls [options] [path ...]
   -R                recurse (depth 64)
   -a, --all         include VCS internals and build/vendor noise
       --ignored     show ignored entries, marked i, without descending
+  -T, --table       tab-separated metadata table
   -s, --sort KEY    name (default), size, time, kind
       --reverse     reverse the order
   -N, --limit N     show at most N entries per root
       --ext LIST    only files with these extensions (go,ts,py)
-  -l, --long        add mode and an ISO-8601 UTC mtime
+  -l, --long        table with mode and an ISO-8601 UTC mtime
       --no-lines    skip reads; no line counts, token estimates or binary flags
-      --no-header   omit the # header row
-      --no-summary  omit the # summary row
-  -q, --quiet       paths only, no header, summary or metadata
+      --no-header   omit the # header row (table only)
+      --no-summary  omit the # summary row (table only)
+  -q, --quiet       plain names only (the default), even with -l
   -j, --json        JSON array, one object per root, with a summary
   -h, --help        full help
   -v, --version     print the version

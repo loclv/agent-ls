@@ -23,7 +23,7 @@ extern "als_time" fn fs_time(seconds: i64, out: u8[>..]&);
 
 // ------------------------------------------------------------------- limits
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const DEFAULT_DEPTH = 1;
 const MAX_DEPTH = 64;
 const MAX_ITEMS = 200000;
@@ -37,6 +37,7 @@ struct Options {
     depth: i64 = DEFAULT_DEPTH,
     json: bool = false,
     quiet: bool = false,
+    table: bool = false,
     long: bool = false,
     lines: bool = true,
     all: bool = false,
@@ -113,11 +114,12 @@ agent-ls - a directory listing for AI agents
 
 usage: agent-ls [options] [path ...]
 
-Defaults to the current directory and one level of entries. Output is one
-tab-separated row per entry, with a # header and a # summary that tools and
-models can ignore or parse. Paths are ready to pass to a read tool.
+Defaults to the current directory and one level of entries. The default
+output is plain names, one per line, like `ls` when piped: no header, no
+summary, no metadata, no padding. Use --table for the rich tab-separated
+table with sizes, line counts and token estimates.
 
-Columns: path, kind, size, lines, tokens, age, flags, lang
+Table columns (--table): path, kind, size, lines, tokens, age, flags, lang
   kind   d directory, f file, l symlink, o other
   size   apparent bytes (K/M/G, one decimal below 100)
   lines  line count for text files, - otherwise
@@ -131,15 +133,16 @@ options:
   -R                recurse (depth 64)
   -a, --all         include VCS internals and build/vendor noise
       --ignored     show ignored entries, marked i, without descending
+  -T, --table       tab-separated metadata table (old default)
   -s, --sort KEY    name (default), size, time, kind
       --reverse     reverse the order
   -N, --limit N     show at most N entries per root
       --ext LIST    only files with these extensions (go,ts,py)
-  -l, --long        add mode and an ISO-8601 UTC mtime
+  -l, --long        table with mode and an ISO-8601 UTC mtime
       --no-lines    skip reads; no line counts, token estimates or binary flags
-      --no-header   omit the # header row
-      --no-summary  omit the # summary row
-  -q, --quiet       paths only, no header, summary or metadata
+      --no-header   omit the # header row (table only)
+      --no-summary  omit the # summary row (table only)
+  -q, --quiet       plain names only (the default), even with -l
   -j, --json        JSON array, one object per root, with a summary
   -h, --help        this text
   -v, --version     print the version
@@ -148,8 +151,9 @@ Sorting: name is ascending, size is largest first, time is newest first.
 --reverse flips that. Directories and files sort together by full path.
 
 examples:
-  agent-ls                       what is in this directory, with costs
-  agent-ls -d 2 src              two levels, with line counts and tokens
+  agent-ls                       plain names, like ls
+  agent-ls -T                    what is in this directory, with costs
+  agent-ls -T -d 2 src           two levels, with line counts and tokens
   agent-ls -q --ext go,ts .      just the source paths
   agent-ls -j -R --limit 500 .   machine-readable, bounded
 """;
@@ -680,6 +684,11 @@ fn write_path(out: u8[>..]&, it: const Item&) {
     if it.kind == 'd' && (it.path.len == 0 || it.path[it.path.len - 1] != '/') { out.push('/'); }
 }
 
+// Plain mode is `ls`-shaped: just the name, no trailing slash, no metadata.
+fn write_plain_path(out: u8[>..]&, it: const Item&) {
+    write_escaped_path(out, it.path);
+}
+
 fn write_row(out: u8[>..]&, it: const Item&, now: i64, opt: Options) {
     write_path(out, it);
     out.push('\t');
@@ -961,7 +970,8 @@ fn main() {
         if a == "--no-summary" { opt.summary = false; i += 1; continue; }
         if a == "--json" { opt.json = true; i += 1; continue; }
         if a == "--quiet" { opt.quiet = true; i += 1; continue; }
-        if a == "--long" { opt.long = true; i += 1; continue; }
+        if a == "--table" { opt.table = true; i += 1; continue; }
+        if a == "--long" { opt.long = true; opt.table = true; i += 1; continue; }
 
         if a[0] == '-' && a.len > 1 && a[1] != '-' {
             let rest = a[1..];
@@ -972,7 +982,8 @@ fn main() {
                 if c == 'a' { opt.all = true; }
                 else if c == 'q' { opt.quiet = true; }
                 else if c == 'j' { opt.json = true; }
-                else if c == 'l' { opt.long = true; }
+                else if c == 'T' { opt.table = true; }
+                else if c == 'l' { opt.long = true; opt.table = true; }
                 else if c == 'R' { opt.depth = MAX_DEPTH; }
                 else if c == 'h' { print(HELP); return; }
                 else if c == 'v' { print("agent-ls ", VERSION); return; }
@@ -1017,6 +1028,10 @@ fn main() {
 
     if paths.len == 0 { paths.push("."); }
 
+    // Plain output shows no file contents, so skip reading every file just to
+    // count lines nobody will see. JSON and the table still need them.
+    if !opt.json && (opt.quiet || !opt.table) { opt.lines = false; }
+
     sort_key = opt.sort;
     sort_reverse = opt.reverse;
 
@@ -1031,12 +1046,12 @@ fn main() {
     var out: u8[>..] = [];
     if opt.json {
         write_json(out, opt);
-    } else if opt.quiet {
+    } else if opt.quiet || !opt.table {
         for res in roots {
             var shown = 0;
             for i in res.start..res.end {
                 if opt.limit > 0 && shown >= opt.limit { break; }
-                write_path(out, items[i]);
+                write_plain_path(out, items[i]);
                 out.push('\n');
                 shown += 1;
             }

@@ -57,22 +57,31 @@ expect_contains "$help" "usage: agent-ls" "--help"
 expect_contains "$help" "--depth" "--help"
 
 out=$("$ALS" "$FIX")
-expect_contains "$out" "# path	kind	size	lines	tokens	age	flags	lang" "default header"
-expect_contains "$out" "src/" "default listing"
+expect_not_contains "$out" "#" "default has no header"
+expect_not_contains "$out" $'\t' "default has no tabs"
+expect_contains "$out" "src" "default listing"
+expect_not_contains "$out" "src/" "default is ls-shaped, no trailing slash"
 expect_not_contains "$out" "src/main.go" "depth 1"
 expect_contains "$out" "link.txt" "symlink"
 expect_contains "$out" "data.bin" "binary"
 
+table=$("$ALS" --table "$FIX")
+expect_contains "$table" "# path	kind	size	lines	tokens	age	flags	lang" "table header"
+expect_contains "$table" "src/" "table listing"
+
+# The default is exactly one name per line, matching the table's row count.
+[ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" = "$(printf '%s\n' "$table" | grep -vc '^#')" ] || fail "default should be one name per line"
+
 # Ignored noise is absent by default, counted in the summary, and shown on
 # request without being descended into.
-expect_not_contains "$out" ".git/" "default ignore"
-expect_not_contains "$out" "node_modules/" "default ignore"
-expect_contains "$out" "2 ignored" "summary"
+expect_not_contains "$table" ".git/" "default ignore"
+expect_not_contains "$table" "node_modules/" "default ignore"
+expect_contains "$table" "2 ignored" "summary"
 
-all=$("$ALS" --all "$FIX")
+all=$("$ALS" --table --all "$FIX")
 expect_contains "$all" ".git/" "--all"
 
-ignored=$("$ALS" --ignored "$FIX")
+ignored=$("$ALS" --table --ignored "$FIX")
 expect_contains "$ignored" ".git/" "--ignored"
 gitrow=$(printf '%s\n' "$ignored" | grep -F ".git/") || fail "missing .git row"
 expect_contains "$gitrow" "	i	" "ignored flag"
@@ -94,18 +103,18 @@ expect_contains "$quiet" "src/main.go" "quiet"
 ext=$("$ALS" -d 2 --ext go "$FIX")
 expect_contains "$ext" "src/main.go" "--ext go"
 expect_not_contains "$ext" "README.md" "--ext go"
-limited=$("$ALS" -N 1 "$FIX")
+limited=$("$ALS" --table -N 1 "$FIX")
 [ "$(printf '%s\n' "$limited" | grep -vc '^#')" = "1" ] || fail "-N 1 should show one row"
 expect_contains "$limited" "showing 1 of" "limit summary"
 
 # Flags: executable, binary, and control characters kept inside one column.
-runrow=$(printf '%s\n' "$out" | grep -F "run.sh") || fail "missing run.sh row"
+runrow=$(printf '%s\n' "$table" | grep -F "run.sh") || fail "missing run.sh row"
 expect_contains "$runrow" "	x" "exec flag"
-binrow=$(printf '%s\n' "$out" | grep -F "data.bin") || fail "missing data.bin row"
+binrow=$(printf '%s\n' "$table" | grep -F "data.bin") || fail "missing data.bin row"
 expect_contains "$binrow" "	b" "binary flag"
-tabrow=$(printf '%s\n' "$out" | grep -F 'tab\tname.txt') || fail "missing escaped tab name"
+tabrow=$(printf '%s\n' "$table" | grep -F 'tab\tname.txt') || fail "missing escaped tab name"
 [ "$(printf '%s' "$tabrow" | awk -F '\t' '{print NF}')" = "8" ] || fail "tab name broke the column count"
-expect_contains "$out" 'nl\nname' "escaped newline name"
+expect_contains "$table" 'nl\nname' "escaped newline name"
 
 # Long mode.
 long=$("$ALS" -l "$FIX")
@@ -113,7 +122,7 @@ expect_contains "$long" "mode	size	lines" "long header"
 expect_contains "$long" "rwxr-xr-x" "long mode"
 
 # --no-lines must not claim a text/binary classification.
-nolines=$("$ALS" --no-lines "$FIX")
+nolines=$("$ALS" --table --no-lines "$FIX")
 emptyrow=$(printf '%s\n' "$nolines" | grep -F "empty.txt") || fail "missing empty.txt"
 case $emptyrow in
     *$'\tf\t0B\t-\t-\t'*) ;;
@@ -121,7 +130,7 @@ case $emptyrow in
 esac
 
 # Sorting.
-bykind=$("$ALS" -s kind "$FIX")
+bykind=$("$ALS" --table -s kind "$FIX")
 first=$(printf '%s\n' "$bykind" | grep -v '^#' | head -1)
 firstkind=$(printf '%s' "$first" | awk -F '\t' '{print $2}')
 [ "$firstkind" = "d" ] || fail "-s kind should put a directory first: $first"
