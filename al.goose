@@ -20,6 +20,8 @@ extern "al_list" fn fs_list(path: const u8[:], out: u8[>..]&) -> bool;
 extern "al_meta" fn fs_meta(path: const u8[:], out: u8[>..]&) -> i64;
 extern "al_count_lines" fn fs_count_lines(path: const u8[:], max_bytes: i64) -> i64;
 extern "al_time" fn fs_time(seconds: i64, out: u8[>..]&);
+// Run a NUL-separated argv without a shell; captures stdout and stderr apart.
+extern "al_run" fn fs_run(args: const u8[:], out: u8[>..]&, err: u8[>..]&) -> i64;
 
 // ------------------------------------------------------------------- limits
 
@@ -129,6 +131,9 @@ Table columns (--table): path, kind, size, lines, tokens, age, flags, lang
   flags  i ignored, b binary, x executable, - none
   lang   language guessed from the name
 
+commands:
+  git [args ...]    run git with token-saving defaults; see `al git --help`
+
 options:
   -d, --depth N     levels below the root (default 1, 0 = the root only)
   -R                recurse (depth 64)
@@ -158,6 +163,10 @@ examples:
   al -T -d 2 src           two levels, with line counts and tokens
   al -q --ext go,ts .      just the source paths
   al -j -R --limit 500 .   machine-readable, bounded
+
+  al git                   git status --short --branch
+  al git log               one line per commit, at most 30
+  al git diff              --stat instead of a patch
 """;
 
 fn fatal(msg: const u8[:]) {
@@ -942,6 +951,210 @@ fn write_json(out: u8[>..]&, opt: Options) {
     out.append("]\n");
 }
 
+// --------------------------------------------------------------------- git
+
+// `al git` runs the real git but asks for the formats an agent reads most:
+// short status, one-line log, stat diffs. Everything else is passed through
+// untouched, so add/commit/push/checkout behave exactly like git. Defaults
+// only fill in when the user has not chosen a format already, so `al git diff
+// -p` still prints a patch and `al git log --format=fuller` works too.
+
+const GIT_LOG_LIMIT: const u8[:] = "30";   // one line per commit cap
+
+const GIT_HELP: const u8[:] = """
+al git - git output with fewer tokens
+
+usage: al git [git arguments ...]
+
+Runs git, strips color codes and blank lines, and returns git's exit code.
+The defaults save tokens; they never hide an error:
+
+  al git                   git status --short --branch
+  al git status            short rows, branch line first
+  al git log               one line per commit, newest first, at most 30
+  al git diff              --stat instead of a patch
+  al git show              --stat instead of a patch
+
+Everything else (add, commit, push, checkout, ...) is passed through
+unchanged. Override a default the usual git way: `al git diff -p` for the
+patch, `al git log --format=oneline`, `al git status --long`.
+""";
+
+// `git -C <dir>` style globals take a value; skip past it to find the command.
+fn git_global_takes_value(a: const u8[:]) -> bool {
+    return a == "-C" || a == "-c" || a == "--git-dir" || a == "--work-tree"
+        || a == "--namespace" || a == "--exec-path" || a == "--config-env";
+}
+
+fn git_subcommand_index(args: const u8[:][>..]&) -> i64 {
+    var k = 0;
+    while k < args.len {
+        let a = args[k];
+        if a.len > 0 && a[0] != '-' { return k; }
+        if git_global_takes_value(a) && k + 1 < args.len { k += 2; }
+        else { k += 1; }
+    }
+    return -1;
+}
+
+// The flag itself or `--name=value`. Short flags also match the clustered
+// forms (`-np`, `-n5`), which is how people type them.
+fn git_flag(args: const u8[:][>..]&, from: i64, name: const u8[:]) -> bool {
+    for k in from..args.len {
+        let a = args[k];
+        if a == name { return true; }
+        if a.len > name.len && starts_with(a, name) {
+            if name.len == 2 || a[name.len] == '=' { return true; }
+        }
+    }
+    return false;
+}
+
+fn git_has_limit(args: const u8[:][>..]&, from: i64) -> bool {
+    if git_flag(args, from, "-n") || git_flag(args, from, "--max-count") { return true; }
+    for k in from..args.len {
+        let a = args[k];
+        if a.len > 1 && a[0] == '-' && a[1] >= '0' && a[1] <= '9' { return true; }
+    }
+    return false;
+}
+
+fn git_argv(user: const u8[:][>..]&) -> const u8[:][>..] {
+    var out: const u8[:][>..] = [];
+    out.push("git");
+    out.push("--no-pager");
+    out.push("-c");
+    out.push("color.ui=false");
+
+    if user.len == 0 {
+        out.push("status");
+        out.push("--short");
+        out.push("--branch");
+        return out;
+    }
+
+    let sidx = git_subcommand_index(user);
+    if sidx < 0 {
+        // Only globals were given, as in `al git -C some/dir`: read status.
+        // A pure query like `al git --version` is passed through instead.
+        var info_only = false;
+        for a in user {
+            if a == "--version" || a == "-v" || a == "--help" || a == "-h"
+                || a == "--exec-path" || a == "--html-path" || a == "--man-path"
+                || a == "--info-path" { info_only = true; }
+        }
+        for a in user { out.push(a); }
+        if !info_only {
+            out.push("status");
+            out.push("--short");
+            out.push("--branch");
+        }
+        return out;
+    }
+
+    var k = 0;
+    while k <= sidx { out.push(user[k]); k += 1; }
+
+    let sub = user[sidx];
+    if sub == "status" {
+        if !git_flag(user, sidx, "--short") && !git_flag(user, sidx, "-s")
+            && !git_flag(user, sidx, "--porcelain") && !git_flag(user, sidx, "--long")
+            && !git_flag(user, sidx, "-v") && !git_flag(user, sidx, "--verbose") {
+            out.push("--short");
+            out.push("--branch");
+        }
+    } else if sub == "log" {
+        if !git_flag(user, sidx, "--format") && !git_flag(user, sidx, "--pretty")
+            && !git_flag(user, sidx, "--oneline") && !git_flag(user, sidx, "--stat")
+            && !git_flag(user, sidx, "--shortstat") && !git_flag(user, sidx, "--numstat")
+            && !git_flag(user, sidx, "--name-only") && !git_flag(user, sidx, "--name-status")
+            && !git_flag(user, sidx, "--raw") && !git_flag(user, sidx, "--graph")
+            && !git_flag(user, sidx, "-p") && !git_flag(user, sidx, "--patch")
+            && !git_flag(user, sidx, "--word-diff") && !git_flag(user, sidx, "--color-words") {
+            out.push("--oneline");
+            out.push("--no-decorate");
+        }
+        if !git_has_limit(user, sidx) {
+            out.push("-n");
+            out.push(GIT_LOG_LIMIT);
+        }
+    } else if sub == "diff" || sub == "show" {
+        if !git_flag(user, sidx, "--stat") && !git_flag(user, sidx, "--numstat")
+            && !git_flag(user, sidx, "--shortstat") && !git_flag(user, sidx, "--name-only")
+            && !git_flag(user, sidx, "--name-status") && !git_flag(user, sidx, "--raw")
+            && !git_flag(user, sidx, "-p") && !git_flag(user, sidx, "--patch")
+            && !git_flag(user, sidx, "--word-diff") && !git_flag(user, sidx, "--color-words")
+            && !git_flag(user, sidx, "--oneline") && !git_flag(user, sidx, "--summary") {
+            out.push("--stat");
+        }
+    }
+
+    while k < user.len { out.push(user[k]); k += 1; }
+    return out;
+}
+
+// Strip ANSI escape sequences and collapse blank runs to a single blank line,
+// keeping the text exactly otherwise. Leading blanks are dropped, the result
+// ends with one newline.
+fn compact_into(dst: u8[>..]&, src: const u8[:]) {
+    var i = 0;
+    var wrote_any = false;
+    var pending_blank = false;
+    while i < src.len {
+        let c = src[i];
+        if c == 0x1b && i + 1 < src.len && src[i + 1] == '[' {
+            var j = i + 2;
+            while j < src.len && !(src[j] >= 0x40 && src[j] <= 0x7e) { j += 1; }
+            i = if j < src.len { j + 1 } else { src.len };
+            continue;
+        }
+        if c == '\n' {
+            if wrote_any { dst.push('\n'); }
+            i += 1;
+            var blanks = 0;
+            while i < src.len && src[i] == '\n' { blanks += 1; i += 1; }
+            if blanks > 0 && wrote_any { pending_blank = true; }
+            continue;
+        }
+        if pending_blank {
+            dst.push('\n');
+            pending_blank = false;
+        }
+        dst.push(c);
+        wrote_any = true;
+        i += 1;
+    }
+    if wrote_any && (dst.len == 0 || dst[dst.len - 1] != '\n') { dst.push('\n'); }
+}
+
+fn git_main(user: const u8[:][>..]&) {
+    if user.len == 1 && (user[0] == "--help" || user[0] == "-h") {
+        print(GIT_HELP);
+        return;
+    }
+
+    let argv = git_argv(user);
+    var encoded: u8[>..] = [];
+    for a in argv {
+        encoded.append(a);
+        encoded.push('\0');
+    }
+
+    var out: u8[>..] = [];
+    var err: u8[>..] = [];
+    let code = fs_run(encoded, out, err);
+    if code < 0 { fatal("cannot run git"); }
+
+    var clean_out: u8[>..] = [];
+    compact_into(clean_out, out);
+    var clean_err: u8[>..] = [];
+    compact_into(clean_err, err);
+    write_stdout(clean_out);
+    write_stderr(clean_err);
+
+    if code != 0 { exit(if code > 255 { 255 } else { code }); }
+}
+
 // ---------------------------------------------------------------------- CLI
 
 fn option_value(args, i: i64, a: const u8[:], name_len: i64) -> const u8[:], i64, bool {
@@ -968,6 +1181,15 @@ fn add_exts(list: const u8[:]) {
 
 fn main() {
     let args = args();
+
+    // `al git ...` is the git proxy, not a directory to list.
+    if args.len > 1 && args[1] == "git" {
+        var user: const u8[:][>..] = [];
+        for k in 2..args.len { user.push(args[k]); }
+        git_main(user);
+        return;
+    }
+
     var opt = Options {};
     var paths: const u8[:][>..] = [];
     var i = 1;

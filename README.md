@@ -88,6 +88,24 @@ and needs no flag compatibility.
 > `al -T -d 2` to triage a subtree, and `al -R` instead of
 > `ls -R` or `ls -lR`. Never run `ls -lR` / `ls -R` on a repo root.
 
+## Git proxy
+
+`al git <args>` runs git through a token-saving proxy: same commands, shorter
+output. Color codes and repeated blank lines are stripped, and the formats an
+agent reads most are already chosen:
+
+| you type | runs |
+| --- | --- |
+| `al git` | `git status --short --branch` |
+| `al git status` | short rows, branch line first |
+| `al git log` | one line per commit, newest first, at most 30 |
+| `al git diff` / `show` | `--stat` instead of a patch |
+
+Everything else (`add`, `commit`, `push`, `checkout`, `branch`, ...) is passed
+through untouched, so writes behave exactly like git, and the exit code is
+git's. Override a default the usual git way: `al git diff -p` for the full
+patch, `al git log --format=fuller`, `al git status --long`.
+
 ## Why it is shaped this way
 
 - **Cost is a first-class column.** `lines` and `tokens` let an agent decide
@@ -197,6 +215,9 @@ printed), `2` a usage error.
 
 ```
 al [options] [path ...]
+al git [git options] ...
+
+  git [args ...]    run git with token-saving defaults (see `al git --help`)
 
   -d, --depth N     levels below the root (default 1, 0 = the root only)
   -R                recurse (depth 64)

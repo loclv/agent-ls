@@ -167,4 +167,67 @@ set -e
 expect_contains "$missing" "no such file or directory" "missing path"
 [ -z "$(printf '%s\n' "$missing" | grep -v '^al:')" ] || fail "missing path should not print an empty table"
 
+# --- git proxy ------------------------------------------------------------
+if command -v git >/dev/null 2>&1; then
+    G="$TMP/git"
+    mkdir -p "$G"
+    (
+        cd "$G"
+        git init -q
+        git config user.email al@example.com
+        git config user.name al
+        printf 'one\n' > a.txt
+        git add a.txt
+        git commit -qm first -m body
+        printf 'two\n' > a.txt
+        printf 'new\n' > b.txt
+    ) >/dev/null 2>&1
+
+    gs=$("$ALS" git -C "$G" status)
+    expect_contains "$gs" "## " "git status branch line"
+    expect_not_contains "$gs" "Changes not staged" "git status is short"
+
+    # Only globals were given, so this still reads status.
+    gs2=$("$ALS" git -C "$G")
+    expect_contains "$gs2" "## " "git with only globals reads status"
+
+    glog=$("$ALS" git -C "$G" log)
+    [ "$(printf '%s\n' "$glog" | grep -vc '^$')" = "1" ] || fail "git log should be one line per commit"
+    expect_contains "$glog" "first" "git log oneline"
+
+    # A blank line in the commit message survives as exactly one blank line.
+    gfuller=$("$ALS" git -C "$G" log --format=fuller)
+    expect_contains "$gfuller" $'\n\n    first' "git log keeps a blank line"
+    expect_not_contains "$gfuller" $'\n\n\n' "git log collapses blank runs"
+
+    ghelp=$("$ALS" git --help)
+    expect_contains "$ghelp" "usage: al git" "git --help"
+
+    gdiff=$("$ALS" git -C "$G" diff)
+    expect_contains "$gdiff" "1 file changed" "git diff stat"
+    expect_not_contains "$gdiff" "+two" "git diff stat has no patch"
+
+    # Overrides pass through unchanged.
+    gp=$("$ALS" git -C "$G" diff -p)
+    expect_contains "$gp" "+two" "git diff -p passes the patch through"
+    gshort=$("$ALS" git -C "$G" status --long)
+    expect_contains "$gshort" "Changes not staged" "status --long override"
+
+    # Forced color is stripped before it reaches stdout.
+    gcolor=$("$ALS" git -C "$G" -c color.ui=always log)
+    expect_not_contains "$gcolor" $'\033' "color stripped"
+
+    # The exit code is git's.
+    set +e
+    "$ALS" git -C "$G" rev-parse --verify nosuchbranch >/dev/null 2>&1
+    gerr=$?
+    "$ALS" git -C "$G" status >/dev/null 2>&1
+    gok=$?
+    set -e
+    [ "$gerr" = "128" ] || fail "git failure should exit 128, got $gerr"
+    [ "$gok" = "0" ] || fail "git success should exit 0, got $gok"
+else
+    echo "skip: git not found"
+fi
+
 echo "ok: all al tests passed"

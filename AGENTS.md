@@ -17,3 +17,7 @@ Use git commit after changed code.
 For directory listings use `al`: `al` to discover names,
 `al -T -d 2` to triage a subtree, and `al -R` instead of
 `ls -R` or `ls -lR`. Never run `ls -lR` / `ls -R` on a repo root.
+
+For git reads use `al git` instead of `git`: `al git` for status,
+`al git log`, `al git diff`, with color stripped and blank runs collapsed.
+Add `-p` / `--long` when the full patch or long form is needed.

@@ -31,7 +31,9 @@ typedef struct {
 #ifndef _WIN32
 #include <dirent.h>
 #include <errno.h>
+#include <poll.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #else
 #include <windows.h>
@@ -284,3 +286,198 @@ void al_time(int64_t seconds, gs_rref out) {
     size_t n = strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tmv);
     if (n) gs_bld_append(out, buf, (int64_t)n);
 }
+
+/* -------------------------------------------------------------- processes */
+
+/* "git\0status\0\0" -> {"git", "status", NULL}. An empty piece ends the list,
+   so the caller appends one final NUL and never counts pieces by hand. */
+static char **al_split_args(al_sl_u8 s, int64_t *count) {
+    int64_t n = 0;
+    int64_t i = 0;
+    while (i < s.len) {
+        int64_t start = i;
+        while (i < s.len && s.data[i] != 0) i++;
+        if (i == start) break;
+        n++;
+        if (i < s.len) i++;
+    }
+    if (n == 0) return NULL;
+    char **argv = (char **)calloc((size_t)n + 1, sizeof(char *));
+    if (!argv) return NULL;
+    int64_t k = 0;
+    i = 0;
+    while (k < n) {
+        int64_t start = i;
+        while (i < s.len && s.data[i] != 0) i++;
+        size_t len = (size_t)(i - start);
+        char *a = (char *)malloc(len + 1);
+        if (!a) {
+            for (int64_t j = 0; j < k; j++) free(argv[j]);
+            free(argv);
+            return NULL;
+        }
+        memcpy(a, s.data + start, len);
+        a[len] = 0;
+        argv[k++] = a;
+        if (i < s.len) i++;
+    }
+    *count = n;
+    return argv;
+}
+
+static void al_free_argv(char **argv, int64_t n) {
+    if (!argv) return;
+    for (int64_t i = 0; i < n; i++) free(argv[i]);
+    free(argv);
+}
+
+#ifndef _WIN32
+
+/* Run argv without a shell, capturing stdout and stderr separately. Returns
+   the exit status (128 + signal when killed), or -1 when it could not be
+   started at all. A failed exec reports through stderr as exit code 127. */
+int64_t al_run(al_sl_u8 args, gs_rref out, gs_rref err) {
+    int64_t n = 0;
+    char **argv = al_split_args(args, &n);
+    if (!argv) return -1;
+
+    int op[2], ep[2];
+    if (pipe(op) != 0) { al_free_argv(argv, n); return -1; }
+    if (pipe(ep) != 0) {
+        close(op[0]); close(op[1]);
+        al_free_argv(argv, n);
+        return -1;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(op[0]); close(op[1]); close(ep[0]); close(ep[1]);
+        al_free_argv(argv, n);
+        return -1;
+    }
+    if (pid == 0) {
+        close(op[0]); close(ep[0]);
+        if (dup2(op[1], STDOUT_FILENO) >= 0 &&
+            dup2(ep[1], STDERR_FILENO) >= 0) {
+            execvp(argv[0], argv);
+        }
+        char msg[256];
+        int m = snprintf(msg, sizeof(msg), "al: cannot run %s\n",
+                         argv[0] ? argv[0] : "command");
+        if (m > 0) {
+            ssize_t ignored = write(STDERR_FILENO, msg, (size_t)m);
+            (void)ignored;
+        }
+        _exit(127);
+    }
+
+    close(op[1]); close(ep[1]);
+    al_free_argv(argv, n);
+
+    struct pollfd fds[2];
+    fds[0].fd = op[0]; fds[0].events = POLLIN; fds[0].revents = 0;
+    fds[1].fd = ep[0]; fds[1].events = POLLIN; fds[1].revents = 0;
+    int live = 2;
+    char buf[65536];
+    while (live > 0) {
+        if (poll(fds, 2, -1) < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+        for (int k = 0; k < 2; k++) {
+            if (fds[k].fd < 0 || fds[k].revents == 0) continue;
+            ssize_t got = read(fds[k].fd, buf, sizeof(buf));
+            if (got > 0) {
+                gs_bld_append(k == 0 ? out : err, buf, (int64_t)got);
+            } else if (got == 0 || (errno != EINTR && errno != EAGAIN)) {
+                close(fds[k].fd);
+                fds[k].fd = -1;
+                live--;
+            }
+        }
+    }
+    if (fds[0].fd >= 0) close(fds[0].fd);
+    if (fds[1].fd >= 0) close(fds[1].fd);
+
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) return -1;
+    }
+    if (WIFEXITED(status)) return (int64_t)WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return 128 + (int64_t)WTERMSIG(status);
+    return -1;
+}
+
+#else /* _WIN32 */
+
+/* Windows has no fork/exec pair here, so this builds one command line with
+   MS-style quoting and reads it back through _popen. stderr is merged into
+   stdout. */
+static size_t al_quoted_len(const char *a) {
+    size_t n = 2;   /* the two surrounding quotes */
+    size_t bs = 0;
+    for (const char *p = a; *p; p++) {
+        if (*p == '\\') { bs++; continue; }
+        if (*p == '"') { n += 2 * bs + 2; bs = 0; continue; }
+        n += bs + 1;
+        bs = 0;
+    }
+    return n + bs;
+}
+
+static char *al_quote_into(char *at, const char *a) {
+    size_t bs = 0;
+    *at++ = '"';
+    for (const char *p = a; *p; p++) {
+        if (*p == '\\') { bs++; continue; }
+        if (*p == '"') {
+            for (size_t j = 0; j < 2 * bs + 1; j++) *at++ = '\\';
+            *at++ = '"';
+            bs = 0;
+            continue;
+        }
+        for (size_t j = 0; j < bs; j++) *at++ = '\\';
+        bs = 0;
+        *at++ = *p;
+    }
+    for (size_t j = 0; j < bs; j++) *at++ = '\\';
+    *at++ = '"';
+    return at;
+}
+
+static char *al_join_args(char **argv, int64_t n) {
+    size_t len = 6;   /* " 2>&1" plus NUL */
+    for (int64_t i = 0; i < n; i++) len += al_quoted_len(argv[i]) + 1;
+    char *cmd = (char *)malloc(len);
+    if (!cmd) return NULL;
+    char *at = cmd;
+    for (int64_t i = 0; i < n; i++) {
+        if (i > 0) *at++ = ' ';
+        at = al_quote_into(at, argv[i]);
+    }
+    memcpy(at, " 2>&1", 6);
+    return cmd;
+}
+
+int64_t al_run(al_sl_u8 args, gs_rref out, gs_rref err) {
+    int64_t n = 0;
+    char **argv = al_split_args(args, &n);
+    if (!argv) return -1;
+
+    char *cmd = al_join_args(argv, n);
+    al_free_argv(argv, n);
+    if (!cmd) return -1;
+
+    FILE *p = _popen(cmd, "r");
+    free(cmd);
+    if (!p) return -1;
+    char buf[65536];
+    size_t got;
+    while ((got = fread(buf, 1, sizeof(buf), p)) > 0) {
+        gs_bld_append(out, buf, (int64_t)got);
+    }
+    int rc = _pclose(p);
+    return (int64_t)rc;
+}
+
+#endif
