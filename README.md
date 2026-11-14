@@ -261,22 +261,43 @@ flips the result.
 
 ## Install
 
-```sh
-make
-make test
-make install                 # ~/.local/bin/al
-make install PREFIX=/usr/local
-```
-
-Or build and copy by hand:
+You need [Goose](https://github.com/aardappel/goose) (the v2026.3 release
+was used to build this project) and a C compiler. From the project directory,
+build and install `al` into `~/.local/bin`:
 
 ```sh
-goose build al.goose
-install -m 755 al ~/.local/bin/al
+make install
 ```
 
-The build produces one self-contained executable. `src/fs.c` includes
-`goose.h` from the compiler's toolchain; no other dependency is involved.
+Add that directory to your `PATH` so your shell can find `al`.
+
+For **zsh**, add this to `~/.zshrc`, then reload the config:
+
+```sh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+For **bash**, add this to `~/.bashrc`, then reload the config:
+
+```sh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+If bash is started as a login shell and does not read `~/.bashrc`, put the
+same `export PATH=...` line in `~/.bash_profile` instead. Confirm the install
+with `al --version`.
+
+To install somewhere else, set `PREFIX` (the executable goes in
+`$PREFIX/bin`) and add that `bin` directory to your `PATH`:
+
+```sh
+make install PREFIX="$HOME/.local"
+```
+
+The build produces one self-contained executable. `src/fs.c` uses `goose.h`
+from the compiler's toolchain; no other runtime dependency is involved.
 
 For development, `goose al.goose -- --depth 2 .` runs from source and
 rebuilds the C shim in-process.
