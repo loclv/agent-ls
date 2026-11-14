@@ -138,8 +138,8 @@ options:
   -R                recurse (depth 64)
   -a, --all         include VCS internals and build/vendor noise
       --ignored     show ignored entries, marked i, without descending
-  -T, --table       tab-separated metadata table (old default)
-      --csv         CSV metadata table for machine consumption
+  -T, --table       tab-separated metadata table
+      --csv         CSV metadata table (the default output format)
   -s, --sort KEY    name (default), size, time, kind
       --reverse     reverse the order
   -N, --limit N     show at most N entries per root
@@ -148,7 +148,7 @@ options:
       --no-lines    skip reads; no line counts, token estimates or binary flags
       --no-header   omit the header row (table and CSV)
       --no-summary  omit the # summary row (table only)
-  -q, --quiet       plain names only (the default), even with -l
+  -q, --quiet       plain names only, even with -l
   -j, --json        JSON array, one object per root, with a summary
   -h, --help        this text
   -v, --version     print the version
@@ -157,8 +157,9 @@ Sorting: name is ascending, size is largest first, time is newest first.
 --reverse flips that. Directories and files sort together by full path.
 
 examples:
-  al                       plain names, like ls
-  al -T                    what is in this directory, with costs
+  al                       CSV rows with costs
+  al -q                    plain names, like ls
+  al -T                    tab-separated table with costs
   al -T -d 2 src           two levels, with line counts and tokens
   al -q --ext go,ts .      just the source paths
   al -j -R --limit 500 .   machine-readable, bounded
