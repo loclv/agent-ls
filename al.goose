@@ -150,7 +150,7 @@ options:
       --no-summary  omit the # summary row (table only)
   -q, --quiet       plain names only, even with -l
   -j, --json        JSON array, one object per root, with a summary
-  -h, --help        this text
+      --help        this text
   -v, --version     print the version
 
 Sorting: name is ascending, size is largest first, time is newest first.
@@ -1269,7 +1269,7 @@ fn main() {
                 else if c == 'T' { opt.table = true; opt.csv = false; }
                 else if c == 'l' { opt.long = true; opt.csv = true; opt.table = true; }
                 else if c == 'R' { opt.depth = MAX_DEPTH; }
-                else if c == 'h' { print(HELP); return; }
+                else if c == 'h' { /* CSV is the default output format */ }
                 else if c == 'v' { print("al ", VERSION); return; }
                 else if c == 'd' || c == 's' || c == 'N' {
                     var v: const u8[:] = "";
