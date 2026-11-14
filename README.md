@@ -106,6 +106,19 @@ through untouched, so writes behave exactly like git, and the exit code is
 git's. Override a default the usual git way: `al git diff -p` for the full
 patch, `al git log --format=fuller`, `al git status --long`.
 
+## Search proxy
+
+`al grep <args>` and `al rg <args>` run grep or ripgrep through the same
+token-saving treatment: color codes and repeated blank lines are stripped,
+and the tool's exit code is preserved. All arguments are passed through
+unchanged, so native flags such as `-rn`, `-i`, `--glob`, `-l`, `-m`,
+and `-c` keep their usual meaning.
+
+```sh
+al grep -rn PATTERN .
+al rg   PATTERN .
+```
+
 ## Why it is shaped this way
 
 - **Cost is a first-class column.** `lines` and `tokens` let an agent decide
