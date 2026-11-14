@@ -269,6 +269,14 @@ build and install `al` into `~/.local/bin`:
 make install
 ```
 
+To build first and move the executable into place yourself:
+
+```sh
+make
+mkdir -p ~/.local/bin
+mv al ~/.local/bin/
+```
+
 Add that directory to your `PATH` so your shell can find `al`.
 
 For **zsh**, add this to `~/.zshrc`, then reload the config:
