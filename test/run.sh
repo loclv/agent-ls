@@ -57,10 +57,10 @@ expect_contains "$help" "usage: al" "--help"
 expect_contains "$help" "--depth" "--help"
 
 out=$("$ALS" "$FIX")
-expect_contains "$out" '"path","kind"' "default has csv header"
+expect_not_contains "$out" "#" "default has no header"
 expect_not_contains "$out" $'\t' "default has no tabs"
 expect_contains "$out" "src" "default listing"
-expect_contains "$out" 'src/' "default csv lists directory"
+expect_not_contains "$out" "src/" "default is ls-shaped, no trailing slash"
 expect_not_contains "$out" "src/main.go" "depth 1"
 expect_contains "$out" "link.txt" "symlink"
 expect_contains "$out" "data.bin" "binary"
@@ -68,6 +68,9 @@ expect_contains "$out" "data.bin" "binary"
 table=$("$ALS" --table "$FIX")
 expect_contains "$table" "# path	kind	size	lines	tokens	age	flags	lang" "table header"
 expect_contains "$table" "src/" "table listing"
+
+# The default is exactly one name per line, matching the table's row count.
+[ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" = "$(printf '%s\n' "$table" | grep -vc '^#')" ] || fail "default should be one name per line"
 
 # Ignored noise is absent by default, counted in the summary, and shown on
 # request without being descended into.
@@ -88,7 +91,7 @@ depth2=$("$ALS" -d 2 "$FIX")
 expect_contains "$depth2" "src/main.go" "depth 2"
 expect_contains "$depth2" "sub/deep.txt" "depth 2"
 rootonly=$("$ALS" -d 0 "$FIX")
-[ "$(printf '%s\n' "$rootonly" | wc -l | tr -d ' ')" = "2" ] || fail "-d 0 should list only the root"
+[ "$(printf '%s\n' "$rootonly" | grep -vc '^#')" = "1" ] || fail "-d 0 should list only the root"
 
 # Quiet output is paths only.
 quiet=$("$ALS" -q -d 2 "$FIX")

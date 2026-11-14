@@ -38,7 +38,7 @@ enum SortKey { Name, Size, Time, Kind }
 struct Options {
     depth: i64 = DEFAULT_DEPTH,
     json: bool = false,
-    csv: bool = true,
+    csv: bool = false,
     quiet: bool = false,
     table: bool = false,
     long: bool = false,
@@ -118,8 +118,9 @@ al - a directory listing for AI agents
 usage: al [options] [path ...]
 
 Defaults to the current directory and one level of entries. The default
-output is CSV with sizes, line counts and token estimates. Use --table for
-the tab-separated table and -q for plain names only.
+output is plain names, one per line, like `ls` when piped: no header, no
+summary, no metadata, no padding. Use --table for the rich tab-separated
+table with sizes, line counts and token estimates.
 
 Table columns (--table): path, kind, size, lines, tokens, age, flags, lang
   kind   d directory, f file, l symlink, o other
@@ -138,8 +139,8 @@ options:
   -R                recurse (depth 64)
   -a, --all         include VCS internals and build/vendor noise
       --ignored     show ignored entries, marked i, without descending
-  -T, --table       tab-separated metadata table
-      --csv         CSV metadata table (the default output format)
+  -T, --table       tab-separated metadata table (old default)
+      --csv         CSV metadata table for machine consumption
   -s, --sort KEY    name (default), size, time, kind
       --reverse     reverse the order
   -N, --limit N     show at most N entries per root
@@ -148,7 +149,7 @@ options:
       --no-lines    skip reads; no line counts, token estimates or binary flags
       --no-header   omit the header row (table and CSV)
       --no-summary  omit the # summary row (table only)
-  -q, --quiet       plain names only, even with -l
+  -q, --quiet       plain names only (the default), even with -l
   -j, --json        JSON array, one object per root, with a summary
       --help        this text
   -v, --version     print the version
@@ -157,9 +158,8 @@ Sorting: name is ascending, size is largest first, time is newest first.
 --reverse flips that. Directories and files sort together by full path.
 
 examples:
-  al                       CSV rows with costs
-  al -q                    plain names, like ls
-  al -T                    tab-separated table with costs
+  al                       plain names, like ls
+  al -T                    what is in this directory, with costs
   al -T -d 2 src           two levels, with line counts and tokens
   al -q --ext go,ts .      just the source paths
   al -j -R --limit 500 .   machine-readable, bounded
