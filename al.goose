@@ -1147,6 +1147,16 @@ fn git_main(user: const u8[:][>..]&) {
 
     var clean_out: u8[>..] = [];
     compact_into(clean_out, out);
+    // A clean tree prints only the branch header ("## main"); drop it so the
+    // output is empty, matching plain `git status`.
+    var only_branch = true;
+    var line_count = 0;
+    for line in split(clean_out, '\n') {
+        if line.len == 0 { continue; }
+        line_count += 1;
+        if !(line.len >= 2 && line[0] == '#' && line[1] == '#') { only_branch = false; }
+    }
+    if only_branch && line_count == 1 { clean_out.clear(); }
     var clean_err: u8[>..] = [];
     compact_into(clean_err, err);
     write_stdout(clean_out);
