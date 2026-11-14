@@ -38,7 +38,7 @@ enum SortKey { Name, Size, Time, Kind }
 struct Options {
     depth: i64 = DEFAULT_DEPTH,
     json: bool = false,
-    csv: bool = false,
+    csv: bool = true,
     quiet: bool = false,
     table: bool = false,
     long: bool = false,
@@ -118,9 +118,8 @@ al - a directory listing for AI agents
 usage: al [options] [path ...]
 
 Defaults to the current directory and one level of entries. The default
-output is plain names, one per line, like `ls` when piped: no header, no
-summary, no metadata, no padding. Use --table for the rich tab-separated
-table with sizes, line counts and token estimates.
+output is CSV with sizes, line counts and token estimates. Use --table for
+the tab-separated table and -q for plain names only.
 
 Table columns (--table): path, kind, size, lines, tokens, age, flags, lang
   kind   d directory, f file, l symlink, o other
@@ -1251,10 +1250,10 @@ fn main() {
         if a == "--no-lines" { opt.lines = false; i += 1; continue; }
         if a == "--no-header" { opt.header = false; i += 1; continue; }
         if a == "--no-summary" { opt.summary = false; i += 1; continue; }
-        if a == "--json" { opt.json = true; i += 1; continue; }
+        if a == "--json" { opt.json = true; opt.csv = false; i += 1; continue; }
         if a == "--csv" { opt.csv = true; opt.table = true; i += 1; continue; }
-        if a == "--quiet" { opt.quiet = true; i += 1; continue; }
-        if a == "--table" { opt.table = true; i += 1; continue; }
+        if a == "--quiet" { opt.quiet = true; opt.csv = false; i += 1; continue; }
+        if a == "--table" { opt.table = true; opt.csv = false; i += 1; continue; }
         if a == "--long" { opt.long = true; opt.csv = true; opt.table = true; i += 1; continue; }
 
         if a[0] == '-' && a.len > 1 && a[1] != '-' {
@@ -1264,9 +1263,9 @@ fn main() {
             while k < rest.len && !consumed {
                 let c = rest[k];
                 if c == 'a' { opt.all = true; }
-                else if c == 'q' { opt.quiet = true; }
-                else if c == 'j' { opt.json = true; }
-                else if c == 'T' { opt.table = true; }
+                else if c == 'q' { opt.quiet = true; opt.csv = false; }
+                else if c == 'j' { opt.json = true; opt.csv = false; }
+                else if c == 'T' { opt.table = true; opt.csv = false; }
                 else if c == 'l' { opt.long = true; opt.csv = true; opt.table = true; }
                 else if c == 'R' { opt.depth = MAX_DEPTH; }
                 else if c == 'h' { print(HELP); return; }
