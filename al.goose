@@ -133,6 +133,8 @@ Table columns (--table): path, kind, size, lines, tokens, age, flags, lang
 
 commands:
   git [args ...]    run git with token-saving defaults; see `al git --help`
+  grep [args ...]   run grep with color stripped and blank runs collapsed
+  rg [args ...]     run rg with color stripped and blank runs collapsed
 
 options:
   -d, --depth N     levels below the root (default 1, 0 = the root only)
@@ -1165,6 +1167,61 @@ fn git_main(user: const u8[:][>..]&) {
     if code != 0 { exit(if code > 255 { 255 } else { code }); }
 }
 
+// ------------------------------------------------------------------ search
+
+// `al grep` / `al rg` run the real search tool with color stripped and blank
+// runs collapsed, like `al git`. Everything else is passed through unchanged.
+
+const SEARCH_HELP: const u8[:] = """
+al grep - content search with fewer tokens
+al rg   - ripgrep with fewer tokens
+
+usage: al grep [grep arguments ...]
+       al rg   [rg arguments ...]
+
+Runs grep or rg, strips color codes and blank lines, and returns the tool's
+exit code. Defaults never hide an error.
+
+  al grep -rn PATTERN .    recursive search, line numbers
+  al rg   PATTERN .         ripgrep search
+""";
+
+fn search_main(engine: const u8[:], user: const u8[:][>..]&) {
+    if user.len == 1 && (user[0] == "--help" || user[0] == "-h") {
+        print(SEARCH_HELP);
+        return;
+    }
+    if user.len == 0 {
+        print(SEARCH_HELP);
+        return;
+    }
+
+    var argv: const u8[:][>..] = [];
+    argv.push(engine);
+    argv.push("--color=never");
+    for a in user { argv.push(a); }
+
+    var encoded: u8[>..] = [];
+    for a in argv {
+        encoded.append(a);
+        encoded.push('\0');
+    }
+
+    var out: u8[>..] = [];
+    var err: u8[>..] = [];
+    let code = fs_run(encoded, out, err);
+    if code < 0 { fatal("cannot run search tool"); }
+
+    var clean_out: u8[>..] = [];
+    compact_into(clean_out, out);
+    var clean_err: u8[>..] = [];
+    compact_into(clean_err, err);
+    write_stdout(clean_out);
+    write_stderr(clean_err);
+
+    if code != 0 { exit(if code > 255 { 255 } else { code }); }
+}
+
 // ---------------------------------------------------------------------- CLI
 
 fn option_value(args, i: i64, a: const u8[:], name_len: i64) -> const u8[:], i64, bool {
@@ -1193,10 +1250,12 @@ fn main() {
     let args = args();
 
     // `al git ...` is the git proxy, not a directory to list.
-    if args.len > 1 && args[1] == "git" {
+    if args.len > 1 && (args[1] == "git" || args[1] == "grep" || args[1] == "rg") {
         var user: const u8[:][>..] = [];
         for k in 2..args.len { user.push(args[k]); }
-        git_main(user);
+        if args[1] == "git" { git_main(user); }
+        else if args[1] == "grep" { search_main("grep", user); }
+        else { search_main("rg", user); }
         return;
     }
 
