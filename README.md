@@ -229,7 +229,7 @@ al git [git options] ...
       --reverse     reverse the order
   -N, --limit N     show at most N entries per root
       --ext LIST    only files with these extensions (go,ts,py)
-  -l, --long        table with mode and an ISO-8601 UTC mtime
+  -l, --long        CSV with mode and an ISO-8601 UTC mtime
       --no-lines    skip reads; no line counts, token estimates or binary flags
       --no-header   omit the header row (table and CSV)
       --no-summary  omit the # summary row (table only)

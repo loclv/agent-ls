@@ -145,7 +145,7 @@ options:
       --reverse     reverse the order
   -N, --limit N     show at most N entries per root
       --ext LIST    only files with these extensions (go,ts,py)
-  -l, --long        table with mode and an ISO-8601 UTC mtime
+  -l, --long        CSV with mode and an ISO-8601 UTC mtime
       --no-lines    skip reads; no line counts, token estimates or binary flags
       --no-header   omit the header row (table and CSV)
       --no-summary  omit the # summary row (table only)
@@ -1255,7 +1255,7 @@ fn main() {
         if a == "--csv" { opt.csv = true; opt.table = true; i += 1; continue; }
         if a == "--quiet" { opt.quiet = true; i += 1; continue; }
         if a == "--table" { opt.table = true; i += 1; continue; }
-        if a == "--long" { opt.long = true; opt.table = true; i += 1; continue; }
+        if a == "--long" { opt.long = true; opt.csv = true; opt.table = true; i += 1; continue; }
 
         if a[0] == '-' && a.len > 1 && a[1] != '-' {
             let rest = a[1..];
@@ -1267,7 +1267,7 @@ fn main() {
                 else if c == 'q' { opt.quiet = true; }
                 else if c == 'j' { opt.json = true; }
                 else if c == 'T' { opt.table = true; }
-                else if c == 'l' { opt.long = true; opt.table = true; }
+                else if c == 'l' { opt.long = true; opt.csv = true; opt.table = true; }
                 else if c == 'R' { opt.depth = MAX_DEPTH; }
                 else if c == 'h' { print(HELP); return; }
                 else if c == 'v' { print("al ", VERSION); return; }

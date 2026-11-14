@@ -118,7 +118,7 @@ expect_contains "$table" 'nl\nname' "escaped newline name"
 
 # Long mode.
 long=$("$ALS" -l "$FIX")
-expect_contains "$long" "mode	size	lines" "long header"
+expect_contains "$long" '"path","kind","mode"' "long header"
 expect_contains "$long" "rwxr-xr-x" "long mode"
 
 # --no-lines must not claim a text/binary classification.
