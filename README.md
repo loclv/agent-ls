@@ -110,13 +110,21 @@ patch, `al git log --format=fuller`, `al git status --long`.
 
 `al grep <args>` and `al rg <args>` run grep or ripgrep through the same
 token-saving treatment: color codes and repeated blank lines are stripped,
-and the tool's exit code is preserved. All arguments are passed through
-unchanged, so native flags such as `-rn`, `-i`, `--glob`, `-l`, `-m`,
-and `-c` keep their usual meaning.
+and the tool's exit code is preserved. Ripgrep arguments are passed through,
+so native flags such as `-i`, `--glob`, `-m`, and `-C` keep their usual
+meaning.
 
 ```sh
 al grep -rn PATTERN .
 al rg   PATTERN .
+```
+
+Add `--csv` to `al rg` to get quoted CSV rows with a header. Each match is a
+row with `path`, `line_number`, `type`, and `text` fields. Context lines from
+`-C`, `-A`, or `-B` are included with `type` set to `context`.
+
+```sh
+al rg --csv -i 'TODO|FIXME' src
 ```
 
 ## Why it is shaped this way

@@ -1184,7 +1184,44 @@ exit code. Defaults never hide an error.
 
   al grep -rn PATTERN .    recursive search, line numbers
   al rg   PATTERN .         ripgrep search
+  al rg --csv PATTERN .     CSV rows: path, line_number, type, text
 """;
+
+fn write_search_csv(out: u8[>..]&, data: const u8[:]) {
+    out.append("\"path\",\"line_number\",\"type\",\"text\"\n");
+    var i: i64 = 0;
+    while i < data.len {
+        let path_start = i;
+        while i < data.len && data[i] != 0 { i += 1; }
+        if i >= data.len { break; }
+        let path = data[path_start..i];
+        i += 1;
+
+        let number_start = i;
+        while i < data.len && data[i] >= '0' && data[i] <= '9' { i += 1; }
+        if i == number_start || i >= data.len || (data[i] != ':' && data[i] != '-') {
+            while i < data.len && data[i] != '\n' { i += 1; }
+            if i < data.len { i += 1; }
+            continue;
+        }
+        let line_number = data[number_start..i];
+        let kind = if data[i] == ':' { "match" } else { "context" };
+        i += 1;
+        let text_start = i;
+        while i < data.len && data[i] != '\n' { i += 1; }
+        let line = data[text_start..i];
+        if i < data.len { i += 1; }
+
+        write_csv_field(out, path);
+        out.push(',');
+        write_csv_field(out, line_number);
+        out.push(',');
+        write_csv_field(out, kind);
+        out.push(',');
+        write_csv_field(out, line);
+        out.push('\n');
+    }
+}
 
 fn search_main(engine: const u8[:], user: const u8[:][>..]&) {
     if user.len == 1 && (user[0] == "--help" || user[0] == "-h") {
@@ -1196,10 +1233,35 @@ fn search_main(engine: const u8[:], user: const u8[:][>..]&) {
         return;
     }
 
+    var csv = false;
+    var args: const u8[:][>..] = [];
+    var after_double_dash = false;
+    for a in user {
+        if engine == "rg" && !after_double_dash && a == "--csv" {
+            csv = true;
+            continue;
+        }
+        args.push(a);
+        if a == "--" { after_double_dash = true; }
+    }
+
     var argv: const u8[:][>..] = [];
     argv.push(engine);
+    var marker: i64 = args.len;
+    for k in 0..args.len {
+        if args[k] == "--" { marker = k; break; }
+    }
+    for k in 0..marker { argv.push(args[k]); }
+    if csv {
+        // Put output-format options after user options so rg's rendering stays
+        // record-oriented even when callers pass --no-heading or --no-line-number.
+        argv.push("--no-heading");
+        argv.push("--with-filename");
+        argv.push("--line-number");
+        argv.push("--null");
+    }
     argv.push("--color=never");
-    for a in user { argv.push(a); }
+    for k in marker..args.len { argv.push(args[k]); }
 
     var encoded: u8[>..] = [];
     for a in argv {
@@ -1213,7 +1275,8 @@ fn search_main(engine: const u8[:], user: const u8[:][>..]&) {
     if code < 0 { fatal("cannot run search tool"); }
 
     var clean_out: u8[>..] = [];
-    compact_into(clean_out, out);
+    if csv && (code == 0 || code == 1) { write_search_csv(clean_out, out); }
+    else { compact_into(clean_out, out); }
     var clean_err: u8[>..] = [];
     compact_into(clean_err, err);
     write_stdout(clean_out);
