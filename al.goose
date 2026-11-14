@@ -1269,7 +1269,13 @@ fn main() {
                 else if c == 'T' { opt.table = true; opt.csv = false; }
                 else if c == 'l' { opt.long = true; opt.csv = true; opt.table = true; }
                 else if c == 'R' { opt.depth = MAX_DEPTH; }
-                else if c == 'h' { /* CSV is the default output format */ }
+                else if c == 'h' {
+                    var ho: u8[>..] = [];
+                    write_csv_field(ho, HELP);
+                    ho.push('\n');
+                    write_stdout(ho);
+                    return;
+                }
                 else if c == 'v' { print("al ", VERSION); return; }
                 else if c == 'd' || c == 's' || c == 'N' {
                     var v: const u8[:] = "";
